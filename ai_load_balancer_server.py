@@ -244,6 +244,191 @@ class AILoadBalancerServer(load_balancer_pb2_grpc.LoadBalancerServicer):
         """Get current LLM model assignments"""
         return self.llm_assignments.copy()
     
+    def process_distributed_query(self, prompt: str) -> str:
+        """Process a query across all connected clients and summarize results"""
+        try:
+            logger.info(f"🔄 Processing distributed query: '{prompt[:50]}...'")
+            
+            # Get active clients
+            active_clients = [
+                (client_id, client_data) 
+                for client_id, client_data in self.clients.items() 
+                if client_data['status'] == 'active'
+            ]
+            
+            if not active_clients:
+                return "❌ No active clients available for processing"
+            
+            logger.info(f"📊 Found {len(active_clients)} active clients")
+            
+            # Send query to all clients
+            responses = {}
+            for client_id, client_data in active_clients:
+                assigned_model = self.llm_assignments.get(client_id)
+                if assigned_model:
+                    logger.info(f"📤 Sending query to client {client_id} (model: {assigned_model})")
+                    
+                    # Create AI request
+                    request_id = f"req_{int(time.time())}_{client_id}"
+                    ai_request = load_balancer_pb2.AIRequest(
+                        request_id=request_id,
+                        model_name=assigned_model,
+                        prompt=prompt,
+                        parameters={"temperature": "0.7", "max_tokens": "256"}
+                    )
+                    
+                    # Send request to client via gRPC
+                    response = self._send_request_to_client(client_id, ai_request)
+                    
+                    if response.success:
+                        responses[client_id] = {
+                            "model": assigned_model,
+                            "response": response.response_text,
+                            "processing_time": response.processing_time
+                        }
+                        logger.info(f"✅ Received response from {client_id} ({response.processing_time:.1f}s)")
+                    else:
+                        logger.warning(f"⚠️ Failed to get response from {client_id}")
+            
+            # Summarize responses
+            if responses:
+                summary = self._summarize_responses(prompt, responses)
+                logger.info(f"📝 Generated summary from {len(responses)} responses")
+                return summary
+            else:
+                return "❌ No responses received from clients"
+                
+        except Exception as e:
+            logger.error(f"❌ Distributed query processing failed: {e}")
+            return f"Error processing query: {str(e)}"
+    
+    def _summarize_responses(self, original_prompt: str, responses: Dict) -> str:
+        """Summarize multiple responses into a single coherent answer"""
+        try:
+            logger.info("🔄 Summarizing responses from multiple models...")
+            
+            # Find the best client for summarization (highest performance)
+            best_client = None
+            best_score = 0
+            
+            for client_id in responses.keys():
+                if client_id in self.clients:
+                    score = self.clients[client_id]['client_info'].specs.performance_score
+                    if score > best_score:
+                        best_score = score
+                        best_client = client_id
+            
+            if not best_client:
+                # Fallback: just combine responses
+                combined = f"Combined responses for: '{original_prompt}'\n\n"
+                for client_id, resp_data in responses.items():
+                    model_size = LLM_MODELS[resp_data['model']].model_size
+                    combined += f"🤖 {model_size} Model Response:\n{resp_data['response']}\n\n"
+                return combined
+            
+            # Create summarization prompt
+            summary_prompt = f"""Please provide a comprehensive summary combining these multiple AI responses to the question: "{original_prompt}"
+
+Responses to summarize:
+"""
+            
+            for client_id, resp_data in responses.items():
+                model_size = LLM_MODELS[resp_data['model']].model_size
+                summary_prompt += f"\n{model_size} Model Response: {resp_data['response']}\n"
+            
+            summary_prompt += "\nPlease provide a single, coherent, and comprehensive answer that combines the best insights from all responses:"
+            
+            logger.info(f"📤 Sending summarization request to best client: {best_client}")
+            
+            # Send to best client for summarization
+            request_id = f"summary_{int(time.time())}"
+            assigned_model = self.llm_assignments.get(best_client)
+            
+            ai_request = load_balancer_pb2.AIRequest(
+                request_id=request_id,
+                model_name=assigned_model,
+                prompt=summary_prompt,
+                parameters={"temperature": "0.3", "max_tokens": "512"}  # Lower temp for more focused summary
+            )
+            
+            response = self.ProcessAIRequest(ai_request, None)
+            
+            if response.success:
+                logger.info("✅ Summary generated successfully")
+                return f"📋 Comprehensive Summary:\n\n{response.response_text}"
+            else:
+                # Fallback to simple combination
+                logger.warning("⚠️ Summarization failed, using simple combination")
+                combined = f"Combined responses for: '{original_prompt}'\n\n"
+                for client_id, resp_data in responses.items():
+                    model_size = LLM_MODELS[resp_data['model']].model_size
+                    combined += f"🤖 {model_size} Model: {resp_data['response']}\n\n"
+                return combined
+                
+        except Exception as e:
+            logger.error(f"❌ Summarization failed: {e}")
+            # Return simple combination as fallback
+            combined = f"Responses for: '{original_prompt}'\n\n"
+            for client_id, resp_data in responses.items():
+                combined += f"Model {resp_data['model']}: {resp_data['response']}\n\n"
+            return combined
+    
+    def _send_request_to_client(self, client_id: str, ai_request):
+        """Send AI request to a specific client"""
+        try:
+            if client_id not in self.clients:
+                logger.error(f"❌ Client {client_id} not found")
+                return load_balancer_pb2.AIResponse(
+                    request_id=ai_request.request_id,
+                    success=False,
+                    response_text="Client not found",
+                    processing_time=0.0,
+                    model_used=ai_request.model_name,
+                    client_id=client_id
+                )
+            
+            client_info = self.clients[client_id]['client_info']
+            client_ip = client_info.ip_address
+            
+            # Calculate client port (same logic as in client)
+            client_port = 50052 + hash(client_id) % 1000
+            client_address = f"{client_ip}:{client_port}"
+            
+            logger.info(f"📡 Connecting to client at {client_address}")
+            
+            # Create gRPC channel to client
+            channel = grpc.insecure_channel(client_address)
+            stub = load_balancer_pb2_grpc.LoadBalancerStub(channel)
+            
+            # Send request with timeout
+            response = stub.ProcessAIRequest(ai_request, timeout=30)
+            
+            # Close channel
+            channel.close()
+            
+            return response
+            
+        except grpc.RpcError as e:
+            logger.error(f"❌ gRPC error communicating with client {client_id}: {e}")
+            return load_balancer_pb2.AIResponse(
+                request_id=ai_request.request_id,
+                success=False,
+                response_text=f"Communication error: {e.details()}",
+                processing_time=0.0,
+                model_used=ai_request.model_name,
+                client_id=client_id
+            )
+        except Exception as e:
+            logger.error(f"❌ Error sending request to client {client_id}: {e}")
+            return load_balancer_pb2.AIResponse(
+                request_id=ai_request.request_id,
+                success=False,
+                response_text=f"Error: {str(e)}",
+                processing_time=0.0,
+                model_used=ai_request.model_name,
+                client_id=client_id
+            )
+    
     def get_system_status(self) -> Dict:
         """Get comprehensive system status"""
         active_clients = len([c for c in self.clients.values() if c['status'] == 'active'])
@@ -265,6 +450,79 @@ class AILoadBalancerServer(load_balancer_pb2_grpc.LoadBalancerServicer):
                 for client_id, client_data in self.clients.items()
             }
         }
+
+class InteractiveQueryProcessor:
+    """Interactive query processor for real-time distributed LLM queries"""
+    
+    def __init__(self, server_instance):
+        self.server = server_instance
+        self.running = False
+    
+    def start(self):
+        """Start the interactive query processor"""
+        self.running = True
+        logger.info("🎯 Interactive Query Processor started")
+        logger.info("💡 Type your queries below (or 'quit' to exit)")
+        logger.info("=" * 60)
+        
+        while self.running:
+            try:
+                # Get user input
+                prompt = input("\n🌾 Enter your agricultural query: ").strip()
+                
+                if not prompt:
+                    continue
+                    
+                if prompt.lower() in ['quit', 'exit', 'q']:
+                    logger.info("👋 Exiting interactive mode...")
+                    break
+                
+                if prompt.lower() == 'status':
+                    self._show_system_status()
+                    continue
+                
+                # Process the query
+                logger.info("=" * 60)
+                logger.info(f"🚀 PROCESSING QUERY: '{prompt}'")
+                logger.info("=" * 60)
+                
+                start_time = time.time()
+                result = self.server.process_distributed_query(prompt)
+                end_time = time.time()
+                
+                logger.info("=" * 60)
+                logger.info("🎉 FINAL RESULT:")
+                logger.info("=" * 60)
+                print(f"\n{result}\n")
+                logger.info(f"⏱️ Total processing time: {end_time - start_time:.2f} seconds")
+                logger.info("=" * 60)
+                
+            except KeyboardInterrupt:
+                logger.info("\n👋 Exiting interactive mode...")
+                break
+            except EOFError:
+                logger.info("\n👋 Exiting interactive mode...")
+                break
+            except Exception as e:
+                logger.error(f"❌ Error in interactive processor: {e}")
+    
+    def _show_system_status(self):
+        """Show current system status"""
+        logger.info("📊 SYSTEM STATUS:")
+        logger.info("-" * 40)
+        
+        active_clients = [c for c in self.server.clients.values() if c['status'] == 'active']
+        logger.info(f"👥 Active clients: {len(active_clients)}")
+        
+        for client_id, client_data in self.server.clients.items():
+            if client_data['status'] == 'active':
+                assigned_model = self.server.llm_assignments.get(client_id, "none")
+                model_size = LLM_MODELS.get(assigned_model, {}).get('model_size', 'Unknown')
+                performance = client_data['client_info'].specs.performance_score
+                
+                logger.info(f"  🖥️ {client_id[:20]}... -> {model_size} model (score: {performance:.1f})")
+        
+        logger.info("-" * 40)
 
 def serve():
     """Start the AI Load Balancer server"""
@@ -288,9 +546,14 @@ def serve():
     for model_name, config in LLM_MODELS.items():
         logger.info(f"   - {model_name} ({config.model_size})")
     
+    # Start interactive query processor
+    query_processor = InteractiveQueryProcessor(ai_service)
+    query_thread = threading.Thread(target=query_processor.start, daemon=True)
+    query_thread.start()
+    
     try:
         while True:
-            time.sleep(86400)  # Sleep for a day
+            time.sleep(1)
     except KeyboardInterrupt:
         logger.info("🛑 Shutting down server...")
         server.stop(0)
