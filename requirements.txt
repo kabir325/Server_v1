@@ -1,0 +1,15 @@
+# AI Load Balancer Server v1.0 Requirements
+
+# Core gRPC
+grpcio==1.60.0
+grpcio-tools==1.60.0
+
+# System monitoring
+psutil==5.9.6
+
+# Logging and utilities
+python-dateutil==2.8.2
+
+# Optional: For advanced features
+# docker==6.1.3
+# requests==2.31.0

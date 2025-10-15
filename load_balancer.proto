@@ -1,0 +1,281 @@
+syntax = "proto3";
+
+package loadbalancer;
+
+// Service for load balancer communication
+service LoadBalancer {
+    // Register a client and get its specs
+    rpc RegisterClient(ClientInfo) returns (RegistrationResponse);
+    
+    // Get system specifications
+    rpc GetSystemSpecs(Empty) returns (SystemSpecs);
+    
+    // Submit a task for execution
+    rpc SubmitTask(Task) returns (TaskResponse);
+    
+    // Get task status
+    rpc GetTaskStatus(TaskStatusRequest) returns (TaskStatusResponse);
+    
+    // Health check
+    rpc HealthCheck(Empty) returns (HealthResponse);
+    
+    // AI Model Management
+    rpc DeployModel(ModelDeploymentRequest) returns (ModelDeploymentResponse);
+    rpc GetAvailableModels(Empty) returns (AvailableModelsResponse);
+    rpc ProcessAIRequest(AIRequest) returns (AIResponse);
+    
+    // Docker Container Management
+    rpc DeployContainer(ContainerDeploymentRequest) returns (ContainerDeploymentResponse);
+    rpc GetContainerStatus(ContainerStatusRequest) returns (ContainerStatusResponse);
+    rpc StopContainer(ContainerStopRequest) returns (ContainerStopResponse);
+    
+    // Sensor Data Integration
+    rpc ProcessSensorData(SensorDataRequest) returns (SensorDataResponse);
+    
+    // Get connected clients information
+    rpc GetConnectedClients(Empty) returns (ConnectedClientsResponse);
+}
+
+// Empty message for requests with no parameters
+message Empty {}
+
+// Client registration information
+message ClientInfo {
+    string client_id = 1;
+    string hostname = 2;
+    string ip_address = 3;
+    SystemSpecs specs = 4;
+}
+
+// Registration response
+message RegistrationResponse {
+    bool success = 1;
+    string message = 2;
+    string assigned_id = 3;
+}
+
+// System specifications
+message SystemSpecs {
+    int32 cpu_cores = 1;
+    float cpu_frequency_ghz = 2;
+    int64 ram_gb = 3;
+    string gpu_info = 4;
+    float gpu_memory_gb = 5;
+    string os_info = 6;
+    float performance_score = 7;
+}
+
+// Task definition
+message Task {
+    string task_id = 1;
+    TaskType task_type = 2;
+    bytes task_data = 3;
+    TaskComplexity complexity = 4;
+    map<string, string> parameters = 5;
+}
+
+// Task types
+enum TaskType {
+    CNN_MODEL = 0;
+    LLM_PROCESSING = 1;
+    SENSOR_DATA_PREPROCESSING = 2;
+    DATA_ANALYSIS = 3;
+    OLLAMA_INFERENCE = 4;
+    COMPUTER_VISION = 5;
+    AGRICULTURAL_ANALYSIS = 6;
+    CHATBOT_RESPONSE = 7;
+}
+
+// Task complexity levels
+enum TaskComplexity {
+    LOW = 0;
+    MEDIUM = 1;
+    HIGH = 2;
+    VERY_HIGH = 3;
+}
+
+// Task execution response
+message TaskResponse {
+    string task_id = 1;
+    bool success = 2;
+    string message = 3;
+    bytes result_data = 4;
+    float execution_time_seconds = 5;
+}
+
+// Task status request
+message TaskStatusRequest {
+    string task_id = 1;
+}
+
+// Task status response
+message TaskStatusResponse {
+    string task_id = 1;
+    TaskStatus status = 2;
+    float progress_percentage = 3;
+    string message = 4;
+}
+
+// Task status enum
+enum TaskStatus {
+    PENDING = 0;
+    RUNNING = 1;
+    COMPLETED = 2;
+    FAILED = 3;
+}
+
+// Health check response
+message HealthResponse {
+    bool healthy = 1;
+    string message = 2;
+    int64 timestamp = 3;
+}
+// AI Model Management Messages
+message ModelDeploymentRequest {
+    string model_name = 1;
+    string model_type = 2; // ollama, pytorch, tensorflow, etc.
+    string docker_image = 3;
+    map<string, string> environment_vars = 4;
+    repeated string required_ports = 5;
+    int32 memory_limit_mb = 6;
+    float cpu_limit = 7;
+}
+
+message ModelDeploymentResponse {
+    bool success = 1;
+    string message = 2;
+    string container_id = 3;
+    string endpoint_url = 4;
+    int32 assigned_port = 5;
+}
+
+message AvailableModelsResponse {
+    repeated ModelInfo models = 1;
+}
+
+message ModelInfo {
+    string model_name = 1;
+    string model_type = 2;
+    string status = 3; // running, stopped, error
+    string endpoint_url = 4;
+    string client_id = 5;
+    float performance_score = 6;
+}
+
+// AI Request/Response Messages
+message AIRequest {
+    string request_id = 1;
+    string model_name = 2;
+    string prompt = 3;
+    map<string, string> parameters = 4; // temperature, max_tokens, etc.
+    bytes input_data = 5; // for image/file inputs
+    string input_type = 6; // text, image, audio, etc.
+}
+
+message AIResponse {
+    string request_id = 1;
+    bool success = 2;
+    string response_text = 3;
+    bytes response_data = 4;
+    float processing_time = 5;
+    string model_used = 6;
+    string client_id = 7;
+}
+
+// Docker Container Management Messages
+message ContainerDeploymentRequest {
+    string container_name = 1;
+    string docker_image = 2;
+    map<string, string> environment_vars = 3;
+    repeated PortMapping port_mappings = 4;
+    repeated VolumeMount volume_mounts = 5;
+    int32 memory_limit_mb = 6;
+    float cpu_limit = 7;
+    string network_mode = 8;
+}
+
+message PortMapping {
+    int32 host_port = 1;
+    int32 container_port = 2;
+    string protocol = 3; // tcp, udp
+}
+
+message VolumeMount {
+    string host_path = 1;
+    string container_path = 2;
+    string mode = 3; // ro, rw
+}
+
+message ContainerDeploymentResponse {
+    bool success = 1;
+    string message = 2;
+    string container_id = 3;
+    repeated int32 exposed_ports = 4;
+}
+
+message ContainerStatusRequest {
+    string container_id = 1;
+}
+
+message ContainerStatusResponse {
+    string container_id = 1;
+    string status = 2; // running, stopped, error
+    string message = 3;
+    repeated int32 exposed_ports = 4;
+    float cpu_usage = 5;
+    float memory_usage_mb = 6;
+}
+
+message ContainerStopRequest {
+    string container_id = 1;
+}
+
+message ContainerStopResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+// Sensor Data Messages
+message SensorDataRequest {
+    string sensor_id = 1;
+    string sensor_type = 2; // temperature, humidity, soil_moisture, etc.
+    repeated SensorReading readings = 3;
+    int64 timestamp = 4;
+    string location = 5;
+}
+
+message SensorReading {
+    string parameter = 1; // temperature, humidity, etc.
+    float value = 2;
+    string unit = 3;
+    int64 timestamp = 4;
+}
+
+message SensorDataResponse {
+    bool success = 1;
+    string message = 2;
+    SensorAnalysis analysis = 3;
+    repeated string recommendations = 4;
+}
+
+message SensorAnalysis {
+    map<string, float> averages = 1;
+    map<string, float> trends = 2; // positive/negative trend values
+    repeated string alerts = 3; // threshold violations, anomalies
+    float health_score = 4; // overall agricultural health score
+}
+
+// Connected clients response
+message ConnectedClientsResponse {
+    repeated ConnectedClient clients = 1;
+}
+
+message ConnectedClient {
+    string client_id = 1;
+    string hostname = 2;
+    string ip_address = 3;
+    SystemSpecs specs = 4;
+    string status = 5; // active, inactive
+    int64 last_heartbeat = 6;
+    repeated string deployed_models = 7;
+}
