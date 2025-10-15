@@ -13,9 +13,9 @@ import json
 import uuid
 import os
 import sys
+import socket
 from typing import Dict, List, Optional
 import psutil
-import socket
 
 # Import generated gRPC files
 import load_balancer_pb2
@@ -42,11 +42,15 @@ class AILoadBalancerServer(load_balancer_pb2_grpc.LoadBalancerServicer):
         """Register a new client and assign LLM model"""
         try:
             client_id = request.client_id
+            # Calculate expected client gRPC port
+            expected_port = 50052 + (hash(client_id) % 100)
+            
             self.clients[client_id] = {
                 "client_info": request,
                 "last_heartbeat": time.time(),
                 "status": "active",
-                "registered_at": time.time()
+                "registered_at": time.time(),
+                "grpc_port": expected_port  # Store expected gRPC port
             }
             
             logger.info(f"✅ Client registered: {client_id} ({request.hostname})")
@@ -387,14 +391,37 @@ Responses to summarize:
                     client_id=client_id
                 )
             
-            client_info = self.clients[client_id]['client_info']
+            client_data = self.clients[client_id]
+            client_info = client_data['client_info']
             client_ip = client_info.ip_address
             
-            # Calculate client port (same logic as in client)
-            client_port = 50052 + hash(client_id) % 1000
+            # Use stored gRPC port
+            client_port = client_data.get('grpc_port', 50052 + (hash(client_id) % 100))
             client_address = f"{client_ip}:{client_port}"
             
             logger.info(f"📡 Connecting to client at {client_address}")
+            
+            # Test basic connectivity first
+            try:
+                test_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                test_socket.settimeout(2)
+                result = test_socket.connect_ex((client_ip, client_port))
+                test_socket.close()
+                
+                if result != 0:
+                    logger.warning(f"⚠️ Cannot reach client at {client_address} (connection refused)")
+                    return load_balancer_pb2.AIResponse(
+                        request_id=ai_request.request_id,
+                        success=False,
+                        response_text=f"Client unreachable at {client_address}",
+                        processing_time=0.0,
+                        model_used=ai_request.model_name,
+                        client_id=client_id
+                    )
+                else:
+                    logger.info(f"✅ Client reachable at {client_address}")
+            except Exception as e:
+                logger.warning(f"⚠️ Connection test failed: {e}")
             
             # Create gRPC channel to client
             channel = grpc.insecure_channel(client_address)
