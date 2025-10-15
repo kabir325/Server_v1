@@ -42,8 +42,8 @@ class AILoadBalancerServer(load_balancer_pb2_grpc.LoadBalancerServicer):
         self.processing_requests: Dict[str, Dict] = {}
         self.llm_assignments: Dict[str, str] = {}  # client_id -> model_name
         
-        logger.info("🚀 AI Load Balancer Server v1.0 initialized")
-        logger.info("🎯 Ready for distributed LLM processing")
+        logger.info("AI Load Balancer Server v1.0 initialized")
+        logger.info("Ready for distributed LLM processing")
     
     def RegisterClient(self, request, context):
         """Register a new client and assign LLM model"""
@@ -68,12 +68,12 @@ class AILoadBalancerServer(load_balancer_pb2_grpc.LoadBalancerServicer):
                 "grpc_port": expected_port  # Store expected gRPC port
             }
             
-            logger.info(f"✅ Client registered: {client_id} ({request.hostname})")
+            logger.info(f"Client registered: {client_id} ({request.hostname})")
             logger.info(f"  CPU: {request.specs.cpu_cores} cores @ {request.specs.cpu_frequency_ghz:.2f} GHz")
             logger.info(f"  RAM: {request.specs.ram_gb} GB")
             logger.info(f"  GPU: {request.specs.gpu_info} ({request.specs.gpu_memory_gb} GB)")
             logger.info(f"  Performance Score: {request.specs.performance_score:.2f}")
-            logger.info(f"📊 Total clients: {len(self.clients)}")
+            logger.info(f"Total clients: {len(self.clients)}")
             
             # Assign optimal LLM model to this client
             self._assign_llm_models()
@@ -186,8 +186,8 @@ class AILoadBalancerServer(load_balancer_pb2_grpc.LoadBalancerServicer):
     def ProcessAIRequest(self, request, context):
         """Process an AI inference request"""
         try:
-            logger.info(f"🤖 Processing AI request for model: {request.model_name}")
-            logger.info(f"📝 Prompt: {request.prompt[:100]}...")
+            logger.info(f"Processing AI request for model: {request.model_name}")
+            logger.info(f"Prompt: {request.prompt[:100]}...")
             
             # Find which client has this model
             assigned_client = None
@@ -237,7 +237,7 @@ class AILoadBalancerServer(load_balancer_pb2_grpc.LoadBalancerServicer):
     def _assign_llm_models(self):
         """Assign LLM models to clients based on their capabilities"""
         try:
-            logger.info("🔄 Assigning LLM models to clients...")
+            logger.info("Assigning LLM models to clients...")
             
             # Get current assignments
             assignments = llm_task_manager.distribute_models_to_clients(self.clients)
@@ -250,14 +250,14 @@ class AILoadBalancerServer(load_balancer_pb2_grpc.LoadBalancerServicer):
                 if client_id in self.clients:
                     client_info = self.clients[client_id]['client_info']
                     model_config = LLM_MODELS[model_name]
-                    logger.info(f"🎯 Assigned {model_name} ({model_config.model_size}) to client {client_id}")
+                    logger.info(f"Assigned {model_name} ({model_config.model_size}) to client {client_id}")
                     logger.info(f"   Client: {client_info.hostname} ({client_info.ip_address})")
                     logger.info(f"   Performance: {client_info.specs.performance_score:.1f}")
             
-            logger.info(f"✅ LLM model assignment completed: {len(assignments)} assignments")
+            logger.info(f"LLM model assignment completed: {len(assignments)} assignments")
             
         except Exception as e:
-            logger.error(f"❌ LLM model assignment failed: {e}")
+            logger.error(f"LLM model assignment failed: {e}")
     
     def get_llm_assignments(self) -> Dict[str, str]:
         """Get current LLM model assignments"""
@@ -266,7 +266,7 @@ class AILoadBalancerServer(load_balancer_pb2_grpc.LoadBalancerServicer):
     def process_distributed_query(self, prompt: str) -> str:
         """Process a query across all connected clients and summarize results"""
         try:
-            logger.info(f"🔄 Processing distributed query: '{prompt[:50]}...'")
+            logger.info(f"Processing distributed query: '{prompt[:50]}...'")
             
             # Get active clients
             active_clients = [
@@ -276,16 +276,16 @@ class AILoadBalancerServer(load_balancer_pb2_grpc.LoadBalancerServicer):
             ]
             
             if not active_clients:
-                return "❌ No active clients available for processing"
+                return "No active clients available for processing"
             
-            logger.info(f"📊 Found {len(active_clients)} active clients")
+            logger.info(f"Found {len(active_clients)} active clients")
             
             # Send query to all clients
             responses = {}
             for client_id, client_data in active_clients:
                 assigned_model = self.llm_assignments.get(client_id)
                 if assigned_model:
-                    logger.info(f"📤 Sending query to client {client_id} (model: {assigned_model})")
+                    logger.info(f"Sending query to client {client_id} (model: {assigned_model})")
                     
                     # Create AI request
                     request_id = f"req_{int(time.time())}_{client_id}"
@@ -305,26 +305,26 @@ class AILoadBalancerServer(load_balancer_pb2_grpc.LoadBalancerServicer):
                             "response": response.response_text,
                             "processing_time": response.processing_time
                         }
-                        logger.info(f"✅ Received response from {client_id} ({response.processing_time:.1f}s)")
+                        logger.info(f"Received response from {client_id} ({response.processing_time:.1f}s)")
                     else:
-                        logger.warning(f"⚠️ Failed to get response from {client_id}")
+                        logger.warning(f"Failed to get response from {client_id}")
             
             # Summarize responses
             if responses:
                 summary = self._summarize_responses(prompt, responses)
-                logger.info(f"📝 Generated summary from {len(responses)} responses")
+                logger.info(f"Generated summary from {len(responses)} responses")
                 return summary
             else:
-                return "❌ No responses received from clients"
+                return "No responses received from clients"
                 
         except Exception as e:
-            logger.error(f"❌ Distributed query processing failed: {e}")
+            logger.error(f"Distributed query processing failed: {e}")
             return f"Error processing query: {str(e)}"
     
     def _summarize_responses(self, original_prompt: str, responses: Dict) -> str:
         """Summarize multiple responses into a single coherent answer"""
         try:
-            logger.info("🔄 Summarizing responses from multiple models...")
+            logger.info("Summarizing responses from multiple models...")
             
             # Find the best client for summarization (highest performance)
             best_client = None
@@ -342,7 +342,7 @@ class AILoadBalancerServer(load_balancer_pb2_grpc.LoadBalancerServicer):
                 combined = f"Combined responses for: '{original_prompt}'\n\n"
                 for client_id, resp_data in responses.items():
                     model_size = LLM_MODELS[resp_data['model']].model_size
-                    combined += f"🤖 {model_size} Model Response:\n{resp_data['response']}\n\n"
+                    combined += f"{model_size} Model Response:\n{resp_data['response']}\n\n"
                 return combined
             
             # Create summarization prompt
@@ -357,7 +357,7 @@ Responses to summarize:
             
             summary_prompt += "\nPlease provide a single, coherent, and comprehensive answer that combines the best insights from all responses:"
             
-            logger.info(f"📤 Sending summarization request to best client: {best_client}")
+            logger.info(f"Sending summarization request to best client: {best_client}")
             
             # Send to best client for summarization
             request_id = f"summary_{int(time.time())}"
@@ -373,19 +373,19 @@ Responses to summarize:
             response = self.ProcessAIRequest(ai_request, None)
             
             if response.success:
-                logger.info("✅ Summary generated successfully")
-                return f"📋 Comprehensive Summary:\n\n{response.response_text}"
+                logger.info("Summary generated successfully")
+                return f"Comprehensive Summary:\n\n{response.response_text}"
             else:
                 # Fallback to simple combination
-                logger.warning("⚠️ Summarization failed, using simple combination")
+                logger.warning("Summarization failed, using simple combination")
                 combined = f"Combined responses for: '{original_prompt}'\n\n"
                 for client_id, resp_data in responses.items():
                     model_size = LLM_MODELS[resp_data['model']].model_size
-                    combined += f"🤖 {model_size} Model: {resp_data['response']}\n\n"
+                    combined += f"{model_size} Model: {resp_data['response']}\n\n"
                 return combined
                 
         except Exception as e:
-            logger.error(f"❌ Summarization failed: {e}")
+            logger.error(f"Summarization failed: {e}")
             # Return simple combination as fallback
             combined = f"Responses for: '{original_prompt}'\n\n"
             for client_id, resp_data in responses.items():
@@ -396,7 +396,7 @@ Responses to summarize:
         """Send AI request to a specific client"""
         try:
             if client_id not in self.clients:
-                logger.error(f"❌ Client {client_id} not found")
+                logger.error(f"Client {client_id} not found")
                 return load_balancer_pb2.AIResponse(
                     request_id=ai_request.request_id,
                     success=False,
@@ -413,11 +413,11 @@ Responses to summarize:
             # Use port override if available, otherwise calculate
             if USE_PORT_OVERRIDE:
                 client_port = get_client_port(client_id)
-                logger.info(f"🔧 Using port override: {client_port}")
+                logger.info(f"Using port override: {client_port}")
                 
                 # If port override fails, try to find the actual port
                 if client_port == 50052:  # Default fallback port
-                    logger.info(f"🔍 Port override not found, trying to detect actual port...")
+                    logger.info(f"Port override not found, trying to detect actual port...")
                     detected_port = self._detect_client_port(client_ip, client_id)
                     if detected_port:
                         client_port = detected_port
@@ -437,7 +437,7 @@ Responses to summarize:
                     client_port = 50052 + (abs(hash(client_id)) % 1000)
             client_address = f"{client_ip}:{client_port}"
             
-            logger.info(f"📡 Connecting to client at {client_address}")
+            logger.info(f"Connecting to client at {client_address}")
             
             # Test basic connectivity first
             try:
@@ -447,7 +447,7 @@ Responses to summarize:
                 test_socket.close()
                 
                 if result != 0:
-                    logger.warning(f"⚠️ Cannot reach client at {client_address} (connection refused)")
+                    logger.warning(f"Cannot reach client at {client_address} (connection refused)")
                     return load_balancer_pb2.AIResponse(
                         request_id=ai_request.request_id,
                         success=False,
@@ -457,9 +457,9 @@ Responses to summarize:
                         client_id=client_id
                     )
                 else:
-                    logger.info(f"✅ Client reachable at {client_address}")
+                    logger.info(f"Client reachable at {client_address}")
             except Exception as e:
-                logger.warning(f"⚠️ Connection test failed: {e}")
+                logger.warning(f"Connection test failed: {e}")
             
             # Create gRPC channel to client
             channel = grpc.insecure_channel(client_address)
@@ -474,7 +474,7 @@ Responses to summarize:
             return response
             
         except grpc.RpcError as e:
-            logger.error(f"❌ gRPC error communicating with client {client_id}: {e}")
+            logger.error(f"gRPC error communicating with client {client_id}: {e}")
             return load_balancer_pb2.AIResponse(
                 request_id=ai_request.request_id,
                 success=False,
@@ -484,7 +484,7 @@ Responses to summarize:
                 client_id=client_id
             )
         except Exception as e:
-            logger.error(f"❌ Error sending request to client {client_id}: {e}")
+            logger.error(f"Error sending request to client {client_id}: {e}")
             return load_balancer_pb2.AIResponse(
                 request_id=ai_request.request_id,
                 success=False,
@@ -497,7 +497,7 @@ Responses to summarize:
     def _detect_client_port(self, client_ip: str, client_id: str) -> Optional[int]:
         """Try to detect the actual client gRPC port by scanning"""
         try:
-            logger.info(f"🔍 Scanning for client gRPC port on {client_ip}...")
+            logger.info(f"Scanning for client gRPC port on {client_ip}...")
             
             # Try common port ranges (quick scan)
             common_ports = [50052, 50053, 50054, 50055, 50745, 50452, 50847]  # Include known ports
@@ -510,17 +510,17 @@ Responses to summarize:
                     test_socket.close()
                     
                     if result == 0:  # Connection successful
-                        logger.info(f"✅ Found open port: {port}")
+                        logger.info(f"Found open port: {port}")
                         return port
                         
                 except:
                     continue
             
-            logger.warning(f"⚠️ Could not detect client gRPC port on {client_ip}")
+            logger.warning(f"Could not detect client gRPC port on {client_ip}")
             return None
             
         except Exception as e:
-            logger.error(f"❌ Port detection failed: {e}")
+            logger.error(f"Port detection failed: {e}")
             return None
     
     def get_system_status(self) -> Dict:
@@ -555,14 +555,14 @@ class InteractiveQueryProcessor:
     def start(self):
         """Start the interactive query processor"""
         self.running = True
-        logger.info("🎯 Interactive Query Processor started")
-        logger.info("💡 Type your queries below (or 'quit' to exit)")
+        logger.info("Interactive Query Processor started")
+        logger.info("Type your queries below (or 'quit' to exit)")
         logger.info("=" * 60)
         
         while self.running:
             try:
                 # Get user input
-                prompt = input("\n🌾 Enter your agricultural query: ").strip()
+                prompt = input("\nEnter your agricultural query: ").strip()
                 
                 if not prompt:
                     continue
@@ -577,7 +577,7 @@ class InteractiveQueryProcessor:
                 
                 # Process the query
                 logger.info("=" * 60)
-                logger.info(f"🚀 PROCESSING QUERY: '{prompt}'")
+                logger.info(f"PROCESSING QUERY: '{prompt}'")
                 logger.info("=" * 60)
                 
                 start_time = time.time()
@@ -585,10 +585,10 @@ class InteractiveQueryProcessor:
                 end_time = time.time()
                 
                 logger.info("=" * 60)
-                logger.info("🎉 FINAL RESULT:")
+                logger.info("FINAL RESULT:")
                 logger.info("=" * 60)
                 print(f"\n{result}\n")
-                logger.info(f"⏱️ Total processing time: {end_time - start_time:.2f} seconds")
+                logger.info(f"Total processing time: {end_time - start_time:.2f} seconds")
                 logger.info("=" * 60)
                 
             except KeyboardInterrupt:
@@ -598,7 +598,7 @@ class InteractiveQueryProcessor:
                 logger.info("\n👋 Exiting interactive mode...")
                 break
             except Exception as e:
-                logger.error(f"❌ Error in interactive processor: {e}")
+                logger.error(f"Error in interactive processor: {e}")
     
     def _show_system_status(self):
         """Show current system status"""
@@ -614,7 +614,7 @@ class InteractiveQueryProcessor:
                 model_size = LLM_MODELS.get(assigned_model, {}).get('model_size', 'Unknown')
                 performance = client_data['client_info'].specs.performance_score
                 
-                logger.info(f"  🖥️ {client_id[:20]}... -> {model_size} model (score: {performance:.1f})")
+                logger.info(f"  {client_id[:20]}... -> {model_size} model (score: {performance:.1f})")
         
         logger.info("-" * 40)
 
@@ -633,10 +633,10 @@ def serve():
     # Start server
     server.start()
     
-    logger.info("🚀 AI Load Balancer Server v1.0 started")
-    logger.info(f"🌐 Listening on {listen_addr}")
-    logger.info("🎯 Ready for distributed LLM processing")
-    logger.info("📊 Supported models:")
+    logger.info("AI Load Balancer Server v1.0 started")
+    logger.info(f"Listening on {listen_addr}")
+    logger.info("Ready for distributed LLM processing")
+    logger.info("Supported models:")
     for model_name, config in LLM_MODELS.items():
         logger.info(f"   - {model_name} ({config.model_size})")
     
