@@ -24,6 +24,13 @@ import load_balancer_pb2_grpc
 # Import LLM task manager
 from llm_task_manager import llm_task_manager, LLM_MODELS
 
+# Import port override
+try:
+    from port_override import get_client_port
+    USE_PORT_OVERRIDE = True
+except ImportError:
+    USE_PORT_OVERRIDE = False
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -42,8 +49,16 @@ class AILoadBalancerServer(load_balancer_pb2_grpc.LoadBalancerServicer):
         """Register a new client and assign LLM model"""
         try:
             client_id = request.client_id
-            # Calculate expected client gRPC port
-            expected_port = 50052 + (hash(client_id) % 100)
+            # Calculate expected client gRPC port using same logic as client
+            try:
+                parts = client_id.split('-')
+                if len(parts) >= 3:
+                    timestamp = int(parts[2])
+                    expected_port = 50052 + (timestamp % 1000)
+                else:
+                    expected_port = 50052 + (abs(hash(client_id)) % 1000)
+            except:
+                expected_port = 50052 + (abs(hash(client_id)) % 1000)
             
             self.clients[client_id] = {
                 "client_info": request,
@@ -395,8 +410,21 @@ Responses to summarize:
             client_info = client_data['client_info']
             client_ip = client_info.ip_address
             
-            # Use stored gRPC port
-            client_port = client_data.get('grpc_port', 50052 + (hash(client_id) % 100))
+            # Use port override if available, otherwise calculate
+            if USE_PORT_OVERRIDE:
+                client_port = get_client_port(client_id)
+                logger.info(f"🔧 Using port override: {client_port}")
+            else:
+                # Calculate port using same deterministic logic as client
+                try:
+                    parts = client_id.split('-')
+                    if len(parts) >= 3:
+                        timestamp = int(parts[2])
+                        client_port = 50052 + (timestamp % 1000)  # Use last 3 digits of timestamp
+                    else:
+                        client_port = 50052 + (abs(hash(client_id)) % 1000)
+                except:
+                    client_port = 50052 + (abs(hash(client_id)) % 1000)
             client_address = f"{client_ip}:{client_port}"
             
             logger.info(f"📡 Connecting to client at {client_address}")
