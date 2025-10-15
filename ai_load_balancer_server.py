@@ -414,6 +414,16 @@ Responses to summarize:
             if USE_PORT_OVERRIDE:
                 client_port = get_client_port(client_id)
                 logger.info(f"🔧 Using port override: {client_port}")
+                
+                # If port override fails, try to find the actual port
+                if client_port == 50052:  # Default fallback port
+                    logger.info(f"🔍 Port override not found, trying to detect actual port...")
+                    detected_port = self._detect_client_port(client_ip, client_id)
+                    if detected_port:
+                        client_port = detected_port
+                        # Store it for future use
+                        from port_override import add_client_port
+                        add_client_port(client_id, client_port)
             else:
                 # Calculate port using same deterministic logic as client
                 try:
@@ -483,6 +493,35 @@ Responses to summarize:
                 model_used=ai_request.model_name,
                 client_id=client_id
             )
+    
+    def _detect_client_port(self, client_ip: str, client_id: str) -> Optional[int]:
+        """Try to detect the actual client gRPC port by scanning"""
+        try:
+            logger.info(f"🔍 Scanning for client gRPC port on {client_ip}...")
+            
+            # Try common port ranges (quick scan)
+            common_ports = [50052, 50053, 50054, 50055, 50745, 50452, 50847]  # Include known ports
+            
+            for port in common_ports:
+                try:
+                    test_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    test_socket.settimeout(0.5)  # Quick test
+                    result = test_socket.connect_ex((client_ip, port))
+                    test_socket.close()
+                    
+                    if result == 0:  # Connection successful
+                        logger.info(f"✅ Found open port: {port}")
+                        return port
+                        
+                except:
+                    continue
+            
+            logger.warning(f"⚠️ Could not detect client gRPC port on {client_ip}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"❌ Port detection failed: {e}")
+            return None
     
     def get_system_status(self) -> Dict:
         """Get comprehensive system status"""
