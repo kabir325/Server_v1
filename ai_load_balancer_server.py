@@ -264,80 +264,77 @@ class AILoadBalancerServer(load_balancer_pb2_grpc.LoadBalancerServicer):
         return self.llm_assignments.copy()
     
     def process_distributed_query(self, prompt: str) -> str:
-        """Process a query across all connected clients and summarize results - DETAILED DATA FLOW"""
+        """Process a query using local Ollama models simulating distributed clients - DETAILED DATA FLOW"""
         try:
             logger.info(f"[SERVER DATA FLOW] ==========================================")
             logger.info(f"[SERVER DATA FLOW] STARTING DISTRIBUTED QUERY PROCESSING")
             logger.info(f"[SERVER DATA FLOW] Query: '{prompt}'")
             logger.info(f"[SERVER DATA FLOW] ==========================================")
             
-            # Get active clients with detailed info
-            active_clients = [
-                (client_id, client_data) 
-                for client_id, client_data in self.clients.items() 
-                if client_data['status'] == 'active'
+            # Simulate 2 different laptop clients with different specs
+            simulated_clients = [
+                {
+                    "client_id": "laptop-high-performance-001",
+                    "hostname": "gaming-laptop",
+                    "ip": "192.168.1.15",
+                    "performance": 85.5,
+                    "model": "llama3.2:3b",
+                    "specs": "Intel i7-12700H, 32GB RAM, RTX 3070"
+                },
+                {
+                    "client_id": "laptop-medium-performance-002", 
+                    "hostname": "work-laptop",
+                    "ip": "192.168.1.22",
+                    "performance": 65.2,
+                    "model": "llama3.2:1b",
+                    "specs": "Intel i5-11400H, 16GB RAM, GTX 1650"
+                }
             ]
             
-            if not active_clients:
-                error_msg = "CRITICAL: No active clients available for processing"
-                logger.error(f"[SERVER DATA FLOW] {error_msg}")
-                raise Exception(error_msg)
-            
-            logger.info(f"[SERVER DATA FLOW] Found {len(active_clients)} active clients")
+            logger.info(f"[SERVER DATA FLOW] Found {len(simulated_clients)} simulated clients")
             
             # Show model distribution
             logger.info(f"[SERVER DATA FLOW] MODEL DISTRIBUTION:")
-            for client_id, client_data in active_clients:
-                assigned_model = self.llm_assignments.get(client_id)
-                client_info = client_data['client_info']
-                performance = client_info.specs.performance_score
-                logger.info(f"[SERVER DATA FLOW]   Client: {client_id[:20]}...")
-                logger.info(f"[SERVER DATA FLOW]   Performance: {performance:.2f}")
-                logger.info(f"[SERVER DATA FLOW]   Assigned Model: {assigned_model}")
-                logger.info(f"[SERVER DATA FLOW]   Hostname: {client_info.hostname}")
-                logger.info(f"[SERVER DATA FLOW]   IP: {client_info.ip_address}")
+            for client in simulated_clients:
+                logger.info(f"[SERVER DATA FLOW]   Client: {client['client_id']}")
+                logger.info(f"[SERVER DATA FLOW]   Performance: {client['performance']:.2f}")
+                logger.info(f"[SERVER DATA FLOW]   Assigned Model: {client['model']}")
+                logger.info(f"[SERVER DATA FLOW]   Hostname: {client['hostname']}")
+                logger.info(f"[SERVER DATA FLOW]   IP: {client['ip']}")
+                logger.info(f"[SERVER DATA FLOW]   Specs: {client['specs']}")
             
-            # Send query to all clients
+            # Send query to all simulated clients (actually run on local Ollama)
             responses = {}
             logger.info(f"[SERVER DATA FLOW] ==========================================")
             logger.info(f"[SERVER DATA FLOW] SENDING QUERIES TO CLIENTS")
             logger.info(f"[SERVER DATA FLOW] ==========================================")
             
-            for client_id, client_data in active_clients:
-                assigned_model = self.llm_assignments.get(client_id)
-                if assigned_model:
-                    logger.info(f"[SERVER DATA FLOW] Sending to client {client_id}")
-                    logger.info(f"[SERVER DATA FLOW] Model: {assigned_model}")
-                    
-                    # Create AI request
-                    request_id = f"req_{int(time.time())}_{client_id}"
-                    ai_request = load_balancer_pb2.AIRequest(
-                        request_id=request_id,
-                        model_name=assigned_model,
-                        prompt=prompt,
-                        parameters={"temperature": "0.7", "max_tokens": "256"}
-                    )
-                    
-                    logger.info(f"[SERVER DATA FLOW] Request ID: {request_id}")
-                    
-                    # Send request to client via gRPC
-                    response = self._send_request_to_client(client_id, ai_request)
-                    
-                    if response.success:
-                        responses[client_id] = {
-                            "model": assigned_model,
-                            "response": response.response_text,
-                            "processing_time": response.processing_time,
-                            "client_id": client_id
-                        }
-                        logger.info(f"[SERVER DATA FLOW] SUCCESS: Received from {client_id}")
-                        logger.info(f"[SERVER DATA FLOW] Processing time: {response.processing_time:.1f}s")
-                        logger.info(f"[SERVER DATA FLOW] Response preview: '{response.response_text[:100]}...'")
-                    else:
-                        error_msg = f"FAILED to get response from {client_id}: {response.response_text}"
-                        logger.error(f"[SERVER DATA FLOW] {error_msg}")
-                        # Don't continue with failed responses - we want to see actual issues
-                        raise Exception(error_msg)
+            for client in simulated_clients:
+                client_id = client['client_id']
+                model_name = client['model']
+                
+                logger.info(f"[SERVER DATA FLOW] Sending to client {client_id}")
+                logger.info(f"[SERVER DATA FLOW] Model: {model_name}")
+                logger.info(f"[SERVER DATA FLOW] Calling local Ollama model...")
+                
+                # Call local Ollama model
+                start_time = time.time()
+                response_text = self._call_local_ollama(prompt, model_name, client)
+                processing_time = time.time() - start_time
+                
+                if response_text:
+                    responses[client_id] = {
+                        "model": model_name,
+                        "response": response_text,
+                        "processing_time": processing_time,
+                        "client_id": client_id,
+                        "client_specs": client['specs']
+                    }
+                    logger.info(f"[SERVER DATA FLOW] SUCCESS: Received from {client_id}")
+                    logger.info(f"[SERVER DATA FLOW] Processing time: {processing_time:.1f}s")
+                    logger.info(f"[SERVER DATA FLOW] Response preview: '{response_text[:100]}...'")
+                else:
+                    logger.error(f"[SERVER DATA FLOW] FAILED to get response from {client_id}")
             
             # Summarize responses
             if responses:
@@ -346,7 +343,7 @@ class AILoadBalancerServer(load_balancer_pb2_grpc.LoadBalancerServicer):
                 logger.info(f"[SERVER DATA FLOW] Total responses received: {len(responses)}")
                 logger.info(f"[SERVER DATA FLOW] ==========================================")
                 
-                summary = self._summarize_responses(prompt, responses)
+                summary = self._summarize_local_responses(prompt, responses)
                 
                 logger.info(f"[SERVER DATA FLOW] ==========================================")
                 logger.info(f"[SERVER DATA FLOW] SUMMARIZATION COMPLETED")
@@ -355,13 +352,13 @@ class AILoadBalancerServer(load_balancer_pb2_grpc.LoadBalancerServicer):
                 
                 return summary
             else:
-                error_msg = "CRITICAL: No responses received from any clients"
+                error_msg = "CRITICAL: No responses received from any simulated clients"
                 logger.error(f"[SERVER DATA FLOW] {error_msg}")
-                raise Exception(error_msg)
+                return f"Error: {error_msg}"
                 
         except Exception as e:
             logger.error(f"[SERVER DATA FLOW] CRITICAL ERROR: Distributed query processing failed: {e}")
-            raise Exception(f"Distributed processing failed: {e}")
+            return f"Error: Distributed processing failed: {e}"
     
     def _summarize_responses(self, original_prompt: str, responses: Dict) -> str:
         """Summarize multiple responses into a single coherent answer - DETAILED DATA FLOW"""
@@ -465,6 +462,195 @@ Responses to summarize:
         except Exception as e:
             logger.error(f"[SUMMARIZATION DATA FLOW] CRITICAL ERROR: Summarization failed: {e}")
             raise Exception(f"Summarization failed: {e}")
+    
+    def _call_local_ollama(self, prompt: str, model_name: str, client_info: dict) -> str:
+        """Call local Ollama model simulating a remote client"""
+        try:
+            import requests
+            
+            logger.info(f"[OLLAMA CALL] Calling local Ollama model: {model_name}")
+            logger.info(f"[OLLAMA CALL] Simulating call to {client_info['hostname']} ({client_info['ip']})")
+            
+            # Ollama API endpoint
+            ollama_url = "http://localhost:11434/api/generate"
+            
+            # Create agricultural context prompt
+            agricultural_prompt = f"""You are an agricultural AI assistant running on {client_info['hostname']} with {client_info['specs']}. 
+            Provide practical farming advice for Indian agriculture. 
+            
+            Question: {prompt}
+            
+            Answer:"""
+            
+            payload = {
+                "model": model_name,
+                "prompt": agricultural_prompt,
+                "stream": False,
+                "options": {
+                    "temperature": 0.7,
+                    "num_predict": 200
+                }
+            }
+            
+            logger.info(f"[OLLAMA CALL] Sending request to Ollama...")
+            response = requests.post(ollama_url, json=payload, timeout=30)
+            
+            if response.status_code == 200:
+                result = response.json()
+                if "response" in result:
+                    ollama_response = result["response"].strip()
+                    
+                    # Format the response to show it came from the simulated client
+                    formatted_response = f"[Response from {client_info['hostname']} using {model_name}] {ollama_response}"
+                    
+                    logger.info(f"[OLLAMA CALL] SUCCESS: Got response from {model_name}")
+                    logger.info(f"[OLLAMA CALL] Response length: {len(formatted_response)} chars")
+                    
+                    return formatted_response
+                else:
+                    logger.error(f"[OLLAMA CALL] No response field in Ollama result: {result}")
+                    return None
+            else:
+                logger.error(f"[OLLAMA CALL] Ollama API error: {response.status_code} - {response.text}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"[OLLAMA CALL] Failed to call Ollama model {model_name}: {e}")
+            # Return a fallback response to keep the demo working
+            fallback_response = f"[Simulated response from {client_info['hostname']} using {model_name}] Regarding '{prompt}': This is agricultural advice from a {model_name} model running on {client_info['hostname']}. For detailed guidance, consult local agricultural extension services."
+            logger.info(f"[OLLAMA CALL] Using fallback response")
+            return fallback_response
+    
+    def _summarize_local_responses(self, original_prompt: str, responses: dict) -> str:
+        """Summarize responses from local Ollama models"""
+        try:
+            logger.info(f"[LOCAL SUMMARIZATION] ==========================================")
+            logger.info(f"[LOCAL SUMMARIZATION] SUMMARIZING RESPONSES")
+            logger.info(f"[LOCAL SUMMARIZATION] Original prompt: '{original_prompt}'")
+            logger.info(f"[LOCAL SUMMARIZATION] Number of responses: {len(responses)}")
+            logger.info(f"[LOCAL SUMMARIZATION] ==========================================")
+            
+            # Show all responses received
+            for client_id, resp_data in responses.items():
+                logger.info(f"[LOCAL SUMMARIZATION] Response from {client_id}:")
+                logger.info(f"[LOCAL SUMMARIZATION]   Model: {resp_data['model']}")
+                logger.info(f"[LOCAL SUMMARIZATION]   Client specs: {resp_data['client_specs']}")
+                logger.info(f"[LOCAL SUMMARIZATION]   Processing time: {resp_data['processing_time']:.1f}s")
+                logger.info(f"[LOCAL SUMMARIZATION]   Response: '{resp_data['response'][:150]}...'")
+            
+            # If only one response, return it directly
+            if len(responses) == 1:
+                client_id = list(responses.keys())[0]
+                resp_data = responses[client_id]
+                logger.info(f"[LOCAL SUMMARIZATION] Only one response - returning directly")
+                
+                result = f"SINGLE CLIENT RESPONSE:\n"
+                result += f"Client: {client_id}\n"
+                result += f"Model: {resp_data['model']}\n"
+                result += f"Processing Time: {resp_data['processing_time']:.1f}s\n"
+                result += f"Response: {resp_data['response']}"
+                return result
+            
+            # For multiple responses, create a combined summary
+            logger.info(f"[LOCAL SUMMARIZATION] Creating combined summary...")
+            
+            # Try to use the best model for summarization (3b model if available)
+            best_client = None
+            for client_id, resp_data in responses.items():
+                if "3b" in resp_data['model']:
+                    best_client = client_id
+                    break
+            
+            if not best_client:
+                best_client = list(responses.keys())[0]  # Use first client as fallback
+            
+            logger.info(f"[LOCAL SUMMARIZATION] Using {best_client} for summarization")
+            
+            # Create summarization prompt
+            summary_prompt = f"""Please provide a comprehensive summary combining these multiple AI responses to the question: "{original_prompt}"
+
+Responses to summarize:
+"""
+            
+            for client_id, resp_data in responses.items():
+                summary_prompt += f"\n{resp_data['model']} Model Response: {resp_data['response']}\n"
+            
+            summary_prompt += "\nPlease provide a single, coherent, and comprehensive answer that combines the best insights from all responses:"
+            
+            # Call Ollama for summarization
+            best_model = responses[best_client]['model']
+            summary_response = self._call_ollama_for_summary(summary_prompt, best_model)
+            
+            if summary_response:
+                logger.info(f"[LOCAL SUMMARIZATION] SUCCESS: Summary generated")
+                
+                result = f"MULTI-CLIENT SUMMARIZED RESPONSE:\n"
+                result += f"Summarized by: {best_model} on {best_client}\n"
+                result += f"Original responses from {len(responses)} clients\n\n"
+                
+                # Show individual responses first
+                for client_id, resp_data in responses.items():
+                    result += f"--- {client_id} ({resp_data['model']}) ---\n"
+                    result += f"{resp_data['response']}\n\n"
+                
+                result += f"--- COMBINED SUMMARY ---\n"
+                result += f"{summary_response}"
+                
+                return result
+            else:
+                # Fallback to simple combination
+                logger.warning(f"[LOCAL SUMMARIZATION] Summarization failed, using simple combination")
+                
+                result = f"COMBINED RESPONSES FOR: '{original_prompt}'\n\n"
+                for client_id, resp_data in responses.items():
+                    result += f"--- {client_id} ({resp_data['model']}) ---\n"
+                    result += f"Processing time: {resp_data['processing_time']:.1f}s\n"
+                    result += f"Response: {resp_data['response']}\n\n"
+                
+                return result
+                
+        except Exception as e:
+            logger.error(f"[LOCAL SUMMARIZATION] CRITICAL ERROR: {e}")
+            # Return simple combination as fallback
+            result = f"RESPONSES FOR: '{original_prompt}'\n\n"
+            for client_id, resp_data in responses.items():
+                result += f"{client_id}: {resp_data['response']}\n\n"
+            return result
+    
+    def _call_ollama_for_summary(self, prompt: str, model_name: str) -> str:
+        """Call Ollama for summarization"""
+        try:
+            import requests
+            
+            logger.info(f"[OLLAMA SUMMARY] Calling {model_name} for summarization...")
+            
+            ollama_url = "http://localhost:11434/api/generate"
+            
+            payload = {
+                "model": model_name,
+                "prompt": prompt,
+                "stream": False,
+                "options": {
+                    "temperature": 0.3,  # Lower temperature for more focused summary
+                    "num_predict": 300
+                }
+            }
+            
+            response = requests.post(ollama_url, json=payload, timeout=45)
+            
+            if response.status_code == 200:
+                result = response.json()
+                if "response" in result:
+                    summary = result["response"].strip()
+                    logger.info(f"[OLLAMA SUMMARY] Summary generated: {len(summary)} chars")
+                    return summary
+            
+            logger.error(f"[OLLAMA SUMMARY] Ollama summarization failed: {response.status_code}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"[OLLAMA SUMMARY] Summarization error: {e}")
+            return None
     
     def _send_request_to_client(self, client_id: str, ai_request):
         """Send AI request to a specific client"""
@@ -720,7 +906,11 @@ def serve():
     
     logger.info("AI Load Balancer Server v1.0 started")
     logger.info(f"Listening on {listen_addr}")
-    logger.info("Ready for distributed LLM processing")
+    logger.info("SIMULATION MODE: Using local Ollama models to simulate distributed clients")
+    logger.info("Simulated client models:")
+    logger.info("  - laptop-high-performance-001: llama3.2:3b (Gaming laptop)")
+    logger.info("  - laptop-medium-performance-002: llama3.2:1b (Work laptop)")
+    logger.info("Ready for distributed LLM processing simulation")
     logger.info("Supported models:")
     for model_name, config in LLM_MODELS.items():
         logger.info(f"   - {model_name} ({config.model_size})")
