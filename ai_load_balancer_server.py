@@ -264,11 +264,14 @@ class AILoadBalancerServer(load_balancer_pb2_grpc.LoadBalancerServicer):
         return self.llm_assignments.copy()
     
     def process_distributed_query(self, prompt: str) -> str:
-        """Process a query across all connected clients and summarize results"""
+        """Process a query across all connected clients and summarize results - DETAILED DATA FLOW"""
         try:
-            logger.info(f"Processing distributed query: '{prompt[:50]}...'")
+            logger.info(f"[SERVER DATA FLOW] ==========================================")
+            logger.info(f"[SERVER DATA FLOW] STARTING DISTRIBUTED QUERY PROCESSING")
+            logger.info(f"[SERVER DATA FLOW] Query: '{prompt}'")
+            logger.info(f"[SERVER DATA FLOW] ==========================================")
             
-            # Get active clients
+            # Get active clients with detailed info
             active_clients = [
                 (client_id, client_data) 
                 for client_id, client_data in self.clients.items() 
@@ -276,16 +279,35 @@ class AILoadBalancerServer(load_balancer_pb2_grpc.LoadBalancerServicer):
             ]
             
             if not active_clients:
-                return "No active clients available for processing"
+                error_msg = "CRITICAL: No active clients available for processing"
+                logger.error(f"[SERVER DATA FLOW] {error_msg}")
+                raise Exception(error_msg)
             
-            logger.info(f"Found {len(active_clients)} active clients")
+            logger.info(f"[SERVER DATA FLOW] Found {len(active_clients)} active clients")
+            
+            # Show model distribution
+            logger.info(f"[SERVER DATA FLOW] MODEL DISTRIBUTION:")
+            for client_id, client_data in active_clients:
+                assigned_model = self.llm_assignments.get(client_id)
+                client_info = client_data['client_info']
+                performance = client_info.specs.performance_score
+                logger.info(f"[SERVER DATA FLOW]   Client: {client_id[:20]}...")
+                logger.info(f"[SERVER DATA FLOW]   Performance: {performance:.2f}")
+                logger.info(f"[SERVER DATA FLOW]   Assigned Model: {assigned_model}")
+                logger.info(f"[SERVER DATA FLOW]   Hostname: {client_info.hostname}")
+                logger.info(f"[SERVER DATA FLOW]   IP: {client_info.ip_address}")
             
             # Send query to all clients
             responses = {}
+            logger.info(f"[SERVER DATA FLOW] ==========================================")
+            logger.info(f"[SERVER DATA FLOW] SENDING QUERIES TO CLIENTS")
+            logger.info(f"[SERVER DATA FLOW] ==========================================")
+            
             for client_id, client_data in active_clients:
                 assigned_model = self.llm_assignments.get(client_id)
                 if assigned_model:
-                    logger.info(f"Sending query to client {client_id} (model: {assigned_model})")
+                    logger.info(f"[SERVER DATA FLOW] Sending to client {client_id}")
+                    logger.info(f"[SERVER DATA FLOW] Model: {assigned_model}")
                     
                     # Create AI request
                     request_id = f"req_{int(time.time())}_{client_id}"
@@ -296,6 +318,8 @@ class AILoadBalancerServer(load_balancer_pb2_grpc.LoadBalancerServicer):
                         parameters={"temperature": "0.7", "max_tokens": "256"}
                     )
                     
+                    logger.info(f"[SERVER DATA FLOW] Request ID: {request_id}")
+                    
                     # Send request to client via gRPC
                     response = self._send_request_to_client(client_id, ai_request)
                     
@@ -303,49 +327,97 @@ class AILoadBalancerServer(load_balancer_pb2_grpc.LoadBalancerServicer):
                         responses[client_id] = {
                             "model": assigned_model,
                             "response": response.response_text,
-                            "processing_time": response.processing_time
+                            "processing_time": response.processing_time,
+                            "client_id": client_id
                         }
-                        logger.info(f"Received response from {client_id} ({response.processing_time:.1f}s)")
+                        logger.info(f"[SERVER DATA FLOW] SUCCESS: Received from {client_id}")
+                        logger.info(f"[SERVER DATA FLOW] Processing time: {response.processing_time:.1f}s")
+                        logger.info(f"[SERVER DATA FLOW] Response preview: '{response.response_text[:100]}...'")
                     else:
-                        logger.warning(f"Failed to get response from {client_id}")
+                        error_msg = f"FAILED to get response from {client_id}: {response.response_text}"
+                        logger.error(f"[SERVER DATA FLOW] {error_msg}")
+                        # Don't continue with failed responses - we want to see actual issues
+                        raise Exception(error_msg)
             
             # Summarize responses
             if responses:
+                logger.info(f"[SERVER DATA FLOW] ==========================================")
+                logger.info(f"[SERVER DATA FLOW] STARTING RESPONSE SUMMARIZATION")
+                logger.info(f"[SERVER DATA FLOW] Total responses received: {len(responses)}")
+                logger.info(f"[SERVER DATA FLOW] ==========================================")
+                
                 summary = self._summarize_responses(prompt, responses)
-                logger.info(f"Generated summary from {len(responses)} responses")
+                
+                logger.info(f"[SERVER DATA FLOW] ==========================================")
+                logger.info(f"[SERVER DATA FLOW] SUMMARIZATION COMPLETED")
+                logger.info(f"[SERVER DATA FLOW] Final summary length: {len(summary)} chars")
+                logger.info(f"[SERVER DATA FLOW] ==========================================")
+                
                 return summary
             else:
-                return "No responses received from clients"
+                error_msg = "CRITICAL: No responses received from any clients"
+                logger.error(f"[SERVER DATA FLOW] {error_msg}")
+                raise Exception(error_msg)
                 
         except Exception as e:
-            logger.error(f"Distributed query processing failed: {e}")
-            return f"Error processing query: {str(e)}"
+            logger.error(f"[SERVER DATA FLOW] CRITICAL ERROR: Distributed query processing failed: {e}")
+            raise Exception(f"Distributed processing failed: {e}")
     
     def _summarize_responses(self, original_prompt: str, responses: Dict) -> str:
-        """Summarize multiple responses into a single coherent answer"""
+        """Summarize multiple responses into a single coherent answer - DETAILED DATA FLOW"""
         try:
-            logger.info("Summarizing responses from multiple models...")
+            logger.info(f"[SUMMARIZATION DATA FLOW] ==========================================")
+            logger.info(f"[SUMMARIZATION DATA FLOW] STARTING RESPONSE SUMMARIZATION")
+            logger.info(f"[SUMMARIZATION DATA FLOW] Original prompt: '{original_prompt}'")
+            logger.info(f"[SUMMARIZATION DATA FLOW] Number of responses: {len(responses)}")
+            logger.info(f"[SUMMARIZATION DATA FLOW] ==========================================")
+            
+            # Show all responses received
+            for client_id, resp_data in responses.items():
+                model_size = LLM_MODELS[resp_data['model']].model_size
+                logger.info(f"[SUMMARIZATION DATA FLOW] Response from {client_id}:")
+                logger.info(f"[SUMMARIZATION DATA FLOW]   Model: {resp_data['model']} ({model_size})")
+                logger.info(f"[SUMMARIZATION DATA FLOW]   Processing time: {resp_data['processing_time']:.1f}s")
+                logger.info(f"[SUMMARIZATION DATA FLOW]   Response: '{resp_data['response'][:150]}...'")
             
             # Find the best client for summarization (highest performance)
             best_client = None
             best_score = 0
             
+            logger.info(f"[SUMMARIZATION DATA FLOW] Finding best client for summarization...")
+            
             for client_id in responses.keys():
                 if client_id in self.clients:
                     score = self.clients[client_id]['client_info'].specs.performance_score
+                    logger.info(f"[SUMMARIZATION DATA FLOW]   {client_id}: performance {score:.2f}")
                     if score > best_score:
                         best_score = score
                         best_client = client_id
             
             if not best_client:
-                # Fallback: just combine responses
-                combined = f"Combined responses for: '{original_prompt}'\n\n"
-                for client_id, resp_data in responses.items():
-                    model_size = LLM_MODELS[resp_data['model']].model_size
-                    combined += f"{model_size} Model Response:\n{resp_data['response']}\n\n"
-                return combined
+                error_msg = "CRITICAL: No suitable client found for summarization"
+                logger.error(f"[SUMMARIZATION DATA FLOW] {error_msg}")
+                raise Exception(error_msg)
+            
+            logger.info(f"[SUMMARIZATION DATA FLOW] Selected best client: {best_client} (performance: {best_score:.2f})")
+            
+            # If only one response, return it directly with clear labeling
+            if len(responses) == 1:
+                client_id = list(responses.keys())[0]
+                resp_data = responses[client_id]
+                model_size = LLM_MODELS[resp_data['model']].model_size
+                logger.info(f"[SUMMARIZATION DATA FLOW] Only one response - returning directly")
+                
+                result = f"SINGLE MODEL RESPONSE:\n"
+                result += f"Model: {resp_data['model']} ({model_size})\n"
+                result += f"Client: {client_id}\n"
+                result += f"Processing Time: {resp_data['processing_time']:.1f}s\n"
+                result += f"Response: {resp_data['response']}"
+                return result
             
             # Create summarization prompt
+            logger.info(f"[SUMMARIZATION DATA FLOW] Creating summarization prompt...")
+            
             summary_prompt = f"""Please provide a comprehensive summary combining these multiple AI responses to the question: "{original_prompt}"
 
 Responses to summarize:
@@ -357,7 +429,8 @@ Responses to summarize:
             
             summary_prompt += "\nPlease provide a single, coherent, and comprehensive answer that combines the best insights from all responses:"
             
-            logger.info(f"Sending summarization request to best client: {best_client}")
+            logger.info(f"[SUMMARIZATION DATA FLOW] Summarization prompt length: {len(summary_prompt)} chars")
+            logger.info(f"[SUMMARIZATION DATA FLOW] Sending to best client: {best_client}")
             
             # Send to best client for summarization
             request_id = f"summary_{int(time.time())}"
@@ -370,27 +443,28 @@ Responses to summarize:
                 parameters={"temperature": "0.3", "max_tokens": "512"}  # Lower temp for more focused summary
             )
             
+            logger.info(f"[SUMMARIZATION DATA FLOW] Sending summarization request...")
             response = self.ProcessAIRequest(ai_request, None)
             
             if response.success:
-                logger.info("Summary generated successfully")
-                return f"Comprehensive Summary:\n\n{response.response_text}"
+                logger.info(f"[SUMMARIZATION DATA FLOW] SUCCESS: Summary generated by {best_client}")
+                logger.info(f"[SUMMARIZATION DATA FLOW] Summary length: {len(response.response_text)} chars")
+                logger.info(f"[SUMMARIZATION DATA FLOW] Summary preview: '{response.response_text[:150]}...'")
+                
+                result = f"MULTI-MODEL SUMMARIZED RESPONSE:\n"
+                result += f"Summarized by: {assigned_model} on {best_client}\n"
+                result += f"Original responses from {len(responses)} models\n"
+                result += f"Summary: {response.response_text}"
+                return result
             else:
-                # Fallback to simple combination
-                logger.warning("Summarization failed, using simple combination")
-                combined = f"Combined responses for: '{original_prompt}'\n\n"
-                for client_id, resp_data in responses.items():
-                    model_size = LLM_MODELS[resp_data['model']].model_size
-                    combined += f"{model_size} Model: {resp_data['response']}\n\n"
-                return combined
+                # NO FALLBACKS - Force error to show the issue
+                error_msg = f"CRITICAL: Summarization failed on {best_client}: {response.response_text}"
+                logger.error(f"[SUMMARIZATION DATA FLOW] {error_msg}")
+                raise Exception(error_msg)
                 
         except Exception as e:
-            logger.error(f"Summarization failed: {e}")
-            # Return simple combination as fallback
-            combined = f"Responses for: '{original_prompt}'\n\n"
-            for client_id, resp_data in responses.items():
-                combined += f"Model {resp_data['model']}: {resp_data['response']}\n\n"
-            return combined
+            logger.error(f"[SUMMARIZATION DATA FLOW] CRITICAL ERROR: Summarization failed: {e}")
+            raise Exception(f"Summarization failed: {e}")
     
     def _send_request_to_client(self, client_id: str, ai_request):
         """Send AI request to a specific client"""
@@ -576,20 +650,31 @@ class InteractiveQueryProcessor:
                     continue
                 
                 # Process the query
-                logger.info("=" * 60)
-                logger.info(f"PROCESSING QUERY: '{prompt}'")
-                logger.info("=" * 60)
+                logger.info("=" * 80)
+                logger.info(f"[MAIN DATA FLOW] PROCESSING QUERY: '{prompt}'")
+                logger.info("=" * 80)
                 
                 start_time = time.time()
-                result = self.server.process_distributed_query(prompt)
-                end_time = time.time()
                 
-                logger.info("=" * 60)
-                logger.info("FINAL RESULT:")
-                logger.info("=" * 60)
-                print(f"\n{result}\n")
-                logger.info(f"Total processing time: {end_time - start_time:.2f} seconds")
-                logger.info("=" * 60)
+                try:
+                    result = self.server.process_distributed_query(prompt)
+                    end_time = time.time()
+                    
+                    logger.info("=" * 80)
+                    logger.info("[MAIN DATA FLOW] FINAL RESULT:")
+                    logger.info("=" * 80)
+                    print(f"\n{result}\n")
+                    logger.info(f"[MAIN DATA FLOW] Total processing time: {end_time - start_time:.2f} seconds")
+                    logger.info("=" * 80)
+                    
+                except Exception as e:
+                    end_time = time.time()
+                    logger.error("=" * 80)
+                    logger.error(f"[MAIN DATA FLOW] PROCESSING FAILED: {e}")
+                    logger.error("=" * 80)
+                    print(f"\nERROR: {e}\n")
+                    logger.error(f"[MAIN DATA FLOW] Failed after: {end_time - start_time:.2f} seconds")
+                    logger.error("=" * 80)
                 
             except KeyboardInterrupt:
                 logger.info("\n👋 Exiting interactive mode...")
