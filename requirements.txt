@@ -1,8 +1,8 @@
 # AI Load Balancer Server v1.0 Requirements
 
 # Core gRPC
-grpcio==1.60.0
-grpcio-tools==1.60.0
+#==1.60.0
+#grpcio-tools==1.60.0
 
 # System monitoring
 psutil==5.9.6
